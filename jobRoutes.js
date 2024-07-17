@@ -2,42 +2,45 @@ const express = require("express");
 const router = express.Router();
 const db = require("./db");
 const jobDB = "EMPJOBDB";
+const appliedJobDB = "EMPUSAPPJOBDB";
 
-router.get("/employee", async (req, res) => {
-  try {
-    const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${jobDB}'`;
-    const tableCheckQueryData = await db.query(tableCheckQuery);
-    const tableExist = tableCheckQueryData[0]["COUNT(*)"];
-    if (!tableExist) {
-      try {
-        const query = `CREATE TABLE ${jobDB} (
-            JOBID NUMBER(30) PRIMARY KEY,
-            JOBTITLE VARCHAR2(50),
-            Location VARCHAR2(50),
-            ExperienceLevel VARCHAR2(50),
-            ContactPerson VARCHAR2(50),
-            Status VARCHAR2(50)
-          )`;
+// router.get("/employee", async (req, res) => {
+//   try {
+//     const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${jobDB}'`;
+//     const tableCheckQueryData = await db.query(tableCheckQuery);
+//     const tableExist = tableCheckQueryData[0]["COUNT(*)"];
+//     if (!tableExist) {
+//       try {
+//         const query = `CREATE TABLE ${jobDB} (
+//           JOBID VARCHAR2(50) PRIMARY KEY,
+//           JOBTITLE  VARCHAR2(50),
+//           LOCATION  VARCHAR2(50),
+//           EXPERIENCELEVEL VARCHAR2(50),
+//           CONTACTPERSON  VARCHAR2(50),
+//           STATUS  VARCHAR2(50),
+//           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+//         )`;
 
-        const data = await db.query(query);
-        console.log(data);
-      } catch (error) {
-        console.log("Error is Creating DB", error);
-      }
-    }
+//         const data = await db.query(query);
+//         console.log(data);
+//       } catch (error) {
+//         console.log("Error is Creating DB", error);
+//       }
+//     }
 
-    const query = `SELECT * FROM ${jobDB}`;
-    const data = await db.query(query);
-    res.json(data);
-  } catch (error) {
-    console.error("Error fetching database:", error);
-    res.status(500).send("Internal Server Error");
-  }
-});
+//     const query = `SELECT * FROM ${jobDB} ORDER BY created_at DESC`;
+//     const data = await db.query(query);
+//     res.json(data);
+//   } catch (error) {
+//     console.error("Error fetching database:", error);
+//     res.status(500).send("Internal Server Error");
+//   }
+// });
 
 router.post("/job/search", async (req, res) => {
   try {
-    const { name, order } = req.body;
+    const { name, order, userType, userId, status } = req.body;
+
     const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${jobDB}'`;
     const tableCheckQueryData = await db.query(tableCheckQuery);
     const tableExist = tableCheckQueryData[0]["COUNT(*)"];
@@ -45,29 +48,89 @@ router.post("/job/search", async (req, res) => {
     if (!tableExist) {
       try {
         const query = `CREATE TABLE ${jobDB} (
-            JOBID NUMBER(30) PRIMARY KEY,
-            JOBTITLE VARCHAR2(50),
-            Location VARCHAR2(50),
-            ExperienceLevel VARCHAR2(50),
-            ContactPerson VARCHAR2(50),
-            Status VARCHAR2(50)
+          JOBID VARCHAR2(50) PRIMARY KEY,
+          JOBTITLE  VARCHAR2(50),
+          LOCATION  VARCHAR2(50),
+          EXPERIENCELEVEL VARCHAR2(50),
+          CONTACTPERSON  VARCHAR2(50),
+          STATUS  VARCHAR2(50),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;
         const data = await db.query(query);
-        console.log(data);
       } catch (error) {
         console.log("Error is Creating DB", error);
       }
     }
 
-    if (name === "") {
-      const query = `SELECT * FROM ${jobDB}`;
-      const data = await db.query(query);
-      console.log(data);
-      res.json(data);
+    let statusCondition = "";
+    if (status === "open") {
+      statusCondition = "WHERE STATUS = 'Open'";
+    } else if (status === "closed") {
+      statusCondition = "WHERE STATUS = 'Closed'";
+    }
+
+    if (userType === "admin") {
+      if (name === "") {
+        const query = `SELECT * FROM ${jobDB} ${statusCondition} ORDER BY created_at DESC `;
+        const data = await db.query(query);
+        res.json(data);
+      } else {
+        const query = `SELECT * FROM  ${jobDB} ${statusCondition} order by ${name} ${order} `;
+        const data = await db.query(query);
+        res.json(data);
+      }
     } else {
-      const query = `SELECT * FROM  ${jobDB} order by ${name} ${order} `;
-      const data = await db.query(query);
-      res.json(data);
+      const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${appliedJobDB}'`;
+      const tableCheckQueryData = await db.query(tableCheckQuery);
+      const tableExist = tableCheckQueryData[0]["COUNT(*)"];
+
+      if (!tableExist) {
+        try {
+          const query = `CREATE TABLE ${appliedJobDB} (
+            USERID NUMBER,
+            JOBID VARCHAR2(50),
+            PRIMARY KEY (USERID, JOBID),
+            FOREIGN KEY (USERID) REFERENCES EMPUSERDB(USERID),
+            FOREIGN KEY (JOBID) REFERENCES EMPJOBDB(JOBID)
+          )`;
+          const data = await db.query(query);
+        } catch (error) {
+          console.log("Error is Creating DB", error);
+        }
+      }
+      if (name === "") {
+        const query = `SELECT 
+        j.JOBID,
+        j.JOBTITLE,
+        j.LOCATION,
+        j.EXPERIENCELEVEL,
+        j.CONTACTPERSON,
+        CASE
+          WHEN a.USERID IS NOT NULL THEN 'REVOKE'
+          ELSE 'APPLY'
+        END AS STATUS
+      FROM ${jobDB} j
+      LEFT JOIN ${appliedJobDB} a ON j.JOBID = a.JOBID AND a.USERID = ${userId}
+      WHERE j.STATUS = 'Open'`;
+        const data = await db.query(query);
+        res.json(data);
+      } else {
+        const query = `SELECT 
+        j.JOBID,
+        j.JOBTITLE,
+        j.LOCATION,
+        j.EXPERIENCELEVEL,
+        j.CONTACTPERSON,
+        CASE
+          WHEN a.USERID IS NOT NULL THEN 'APPLIED'
+          ELSE 'APPLY'
+        END AS STATUS
+      FROM ${jobDB} j
+      LEFT JOIN ${appliedJobDB} a ON j.JOBID = a.JOBID AND a.USERID = ${userId}
+      WHERE j.STATUS = 'Open' order by ${name} ${order} `;
+        const data = await db.query(query);
+        res.json(data);
+      }
     }
   } catch (error) {
     console.error("Error fetching database:", error);
@@ -99,7 +162,6 @@ router.put("/job/:jobId", async (req, res) => {
   try {
     const updatedData = req.body;
     const { jobId } = req.params;
-    console.log(updatedData);
     const query = `UPDATE ${jobDB} SET jobTitle = :1, location = :2, experienceLevel = :3, contactPerson = :4, status = :5 WHERE jobId = :6`;
     const params = [
       updatedData.jobTitle,
@@ -120,8 +182,10 @@ router.put("/job/:jobId", async (req, res) => {
 router.delete("/job/:jobId", async (req, res) => {
   try {
     const { jobId } = req.params;
-    const query = `DELETE FROM ${jobDB} WHERE jobId = :1`;
-    await db.query(query, [jobId]);
+    const queryForApplyDB = `DELETE FROM ${appliedJobDB} WHERE jobId = :1`;
+    await db.query(queryForApplyDB, [jobId]);
+    const queryForJobDB = `DELETE FROM ${jobDB} WHERE jobId = :1`;
+    await db.query(queryForJobDB, [jobId]);
     res.status(200).send("Record deleted successfully");
   } catch (error) {
     console.error("Error deleting data:", error);
@@ -143,22 +207,67 @@ router.post("/checkJobId", async (req, res) => {
   }
 });
 
-router.post("/sortRecords", async (req, res) => {
+router.post("/job/apply", async (req, res) => {
+  const { userid, jobid } = req.body;
   try {
-    const { columnName, sortOrder } = req.body;
-    if (
-      !columnName ||
-      !sortOrder ||
-      (sortOrder !== "ASC" && sortOrder !== "DESC")
-    ) {
-      return res.status(400).send("Invalid column name or sort order");
+    const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${appliedJobDB}'`;
+    const tableCheckQueryData = await db.query(tableCheckQuery);
+    const tableExist = tableCheckQueryData[0]["COUNT(*)"];
+
+    if (!tableExist) {
+      try {
+        const query = `CREATE TABLE ${appliedJobDB} (
+          USERID NUMBER,
+          JOBID VARCHAR2(50),
+          PRIMARY KEY (USERID, JOBID),
+          FOREIGN KEY (USERID) REFERENCES EMPUSERDB(USERID),
+          FOREIGN KEY (JOBID) REFERENCES EMPJOBDB(JOBID)
+        )`;
+        const data = await db.query(query);
+      } catch (error) {
+        console.log("Error is Creating DB", error);
+      }
     }
-    const query = `SELECT * FROM ${jobDB} ORDER BY ${columnName} ${sortOrder}`;
-    const data = await db.query(query);
-    res.json(data);
+    const query = `INSERT INTO ${appliedJobDB} (USERID, JOBID) VALUES (:userid, :jobid)`;
+    await db.query(query, [userid, jobid]);
+    res
+      .status(200)
+      .json({ success: true, message: "Job application successful" });
   } catch (error) {
-    console.error("Error sorting records:", error);
-    res.status(500).send("Internal Server Error");
+    console.error("Error applying for job:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+router.post("/job/revoke", async (req, res) => {
+  const { userid, jobid } = req.body;
+  try {
+    // const tableCheckQuery = `SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = '${appliedJobDB}'`;
+    // const tableCheckQueryData = await db.query(tableCheckQuery);
+    // const tableExist = tableCheckQueryData[0]["COUNT(*)"];
+
+    // if (!tableExist) {
+    //   try {
+    //     const query = `CREATE TABLE ${appliedJobDB} (
+    //       USERID NUMBER,
+    //       JOBID VARCHAR2(50),
+    //       PRIMARY KEY (USERID, JOBID),
+    //       FOREIGN KEY (USERID) REFERENCES EMPUSERDB(USERID),
+    //       FOREIGN KEY (JOBID) REFERENCES EMPJOBDB(JOBID)
+    //     )`;
+    //     const data = await db.query(query);
+    //   } catch (error) {
+    //     console.log("Error is Creating DB", error);
+    //   }
+    // }
+    const query = `DELETE FROM ${appliedJobDB} WHERE USERID = :userid AND JOBID = :jobid`;
+    await db.query(query, [userid, jobid]);
+    res
+      .status(200)
+      .json({ success: true, message: "Job application revoked successful" });
+  } catch (error) {
+    console.error("Error reevoking job application:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
 

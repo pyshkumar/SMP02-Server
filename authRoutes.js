@@ -27,7 +27,7 @@ router.post("/signup", async (req, res) => {
 router.post("/signin", async (req, res) => {
   try {
     const userRecord = req.body;
-    const query = `SELECT PASSWORD, USERTYPE FROM ${userDB} WHERE USERNAME = :1`;
+    const query = `SELECT PASSWORD, USERTYPE, USERID FROM ${userDB} WHERE USERNAME = :1`;
     const result = await db.query(query, [userRecord.username]);
 
     if (result.length === 0) {
@@ -42,7 +42,11 @@ router.post("/signin", async (req, res) => {
     );
 
     if (isMatch) {
-      res.json({ exists: true, userType: result[0].USERTYPE });
+      res.json({
+        exists: true,
+        userType: result[0].USERTYPE,
+        userId: result[0].USERID,
+      });
       console.log("match");
     } else {
       res.json({ exists: false });
