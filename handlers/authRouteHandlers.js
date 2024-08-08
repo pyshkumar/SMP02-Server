@@ -1,30 +1,10 @@
-// authRoutes.js
 const express = require("express");
-const router = express.Router();
-const db = require("./db");
-const auth = require("./auth");
+// const router = express.Router();
+const db = require("../utils/db");
+const auth = require("../utils/auth");
 const userDB = "EMPUSERDB";
 
-router.post("/signup", async (req, res) => {
-  try {
-    console.log(req.body);
-    const newUserRecord = req.body;
-    const hashedPassword = await auth.hashPassword(newUserRecord.password);
-    const query = `INSERT INTO ${userDB} (USERNAME, PASSWORD, USERTYPE) VALUES (:1, :2, :3)`;
-    const params = [
-      newUserRecord.username,
-      hashedPassword,
-      newUserRecord.userType,
-    ];
-    await db.query(query, params);
-    res.status(200).send("User added successfully");
-  } catch (error) {
-    console.error("Error adding data:", error);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
-router.post("/signin", async (req, res) => {
+const signinHandler = async (req, res) => {
   try {
     const userRecord = req.body;
     const query = `SELECT PASSWORD, USERTYPE, USERID FROM ${userDB} WHERE USERNAME = :1`;
@@ -55,6 +35,25 @@ router.post("/signin", async (req, res) => {
     console.error("Error checking user credentials:", error);
     res.status(500).send("Internal Server Error");
   }
-});
+};
 
-module.exports = router;
+const signoutHandler = async (req, res) => {
+  try {
+    console.log(req.body);
+    const newUserRecord = req.body;
+    const hashedPassword = await auth.hashPassword(newUserRecord.password);
+    const query = `INSERT INTO ${userDB} (USERNAME, PASSWORD, USERTYPE) VALUES (:1, :2, :3)`;
+    const params = [
+      newUserRecord.username,
+      hashedPassword,
+      newUserRecord.userType,
+    ];
+    await db.query(query, params);
+    res.status(200).send("User added successfully");
+  } catch (error) {
+    console.error("Error adding data:", error);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+module.exports = { signoutHandler, signinHandler };
